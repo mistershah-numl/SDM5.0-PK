@@ -49,15 +49,23 @@ export async function PUT(req: NextRequest) {
     }
 
     await connectDB();
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "ID is required" }, { status: 400 });
+    }
+
     const body = await req.json();
-    const { _id, ...update } = body;
 
     // If activating, deactivate all others first
-    if (update.isActive) {
+    if (body.isActive) {
       await IndexVersion.updateMany({}, { isActive: false });
     }
 
-    const version = await IndexVersion.findByIdAndUpdate(_id, update, { new: true }).lean();
+    const version = await IndexVersion.findByIdAndUpdate(id, body, { new: true }).lean();
+    if (!version) {
+      return NextResponse.json({ error: "Index version not found" }, { status: 404 });
+    }
     return NextResponse.json({ version });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed to update index version";
@@ -75,8 +83,37 @@ export async function DELETE(req: NextRequest) {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-    await IndexVersion.findByIdAndDelete(id);
-    return NextResponse.json({ message: "Index version deleted" });
+
+    if (!id) {
+      return NextResponse.json({ error: "ID is required" }, { status: 400 });
+    }
+
+    // Import models for cascade delete
+    const Pillar = require("@/lib/models/Pillar").default;
+    const Dimension = require("@/lib/models/Dimension").default;
+    const Question = require("@/lib/models/Question").default;
+    const MaturityLevel = require("@/lib/models/MaturityLevel").default;
+    const Formula = require("@/lib/models/Formula").default;
+
+    // Get all pillars for this index version
+    const pillars = await Pillar.find({ indexVersionId: id }).select("_id").lean();
+    const pillarIds = pillars.map((p: any) => p._id);
+
+    // Get all dimensions for these pillars
+    const dimensions = await Dimension.find({ pillarId: { $in: pillarIds } }).select("_id").lean();
+    const dimensionIds = dimensions.map((d: any) => d._id);
+
+    // Delete all data related to this index version in correct order
+    await Promise.all([
+      Question.deleteMany({ dimensionId: { $in: dimensionIds } }),
+      Dimension.deleteMany({ pillarId: { $in: pillarIds } }),
+      Pillar.deleteMany({ indexVersionId: id }),
+      MaturityLevel.deleteMany({ indexVersionId: id }),
+      Formula.deleteMany({ indexVersionId: id }),
+      IndexVersion.findByIdAndDelete(id),
+    ]);
+
+    return NextResponse.json({ message: "Index version and all related data deleted" });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed to delete index version";
     return NextResponse.json({ error: msg }, { status: 500 });

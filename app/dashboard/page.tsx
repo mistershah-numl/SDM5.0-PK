@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { ArrowRight, TrendingUp, Target, Zap, CheckCircle, Leaf } from 'lucide-react';
+import { ArrowRight, TrendingUp, Target, Zap, CheckCircle, Leaf, X } from 'lucide-react';
 
 const fetcher = (url: string) => fetch(url, { credentials: 'include' }).then(r => {
   if (!r.ok) throw new Error('Failed to fetch');
@@ -25,16 +26,40 @@ interface User {
   };
 }
 
+interface AssessmentDetail {
+  _id: string;
+  overallScore: number;
+  pillarScores: Array<{
+    pillarId: string;
+    score: number;
+    name?: string;
+  }>;
+  dimensionScores: Array<{
+    dimensionId: string;
+    score: number;
+    name?: string;
+  }>;
+  completedAt: Date;
+  versionName?: string;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedAssessment, setSelectedAssessment] = useState<AssessmentDetail | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [pillars, setPillars] = useState<any[]>([]);
+  const [dimensions, setDimensions] = useState<any[]>([]);
 
   const { data: assessmentsData } = useSWR(
     user && user.role !== 'admin' ? '/api/assessments/my-assessments' : null,
     fetcher,
     { revalidateOnFocus: false }
   );
+
+  const { data: pillarData } = useSWR('/api/surveys/pillars', fetcher);
+  const { data: dimensionData } = useSWR('/api/surveys/dimensions', fetcher);
 
   const [assessments, setAssessments] = useState<any[]>([]);
   const [stats, setStats] = useState({
@@ -79,6 +104,11 @@ export default function DashboardPage() {
   }, [router]);
 
   useEffect(() => {
+    if (pillarData?.pillars) setPillars(pillarData.pillars);
+    if (dimensionData?.dimensions) setDimensions(dimensionData.dimensions);
+  }, [pillarData, dimensionData]);
+
+  useEffect(() => {
     if (assessmentsData?.assessments) {
       setAssessments(assessmentsData.assessments);
       
@@ -98,6 +128,25 @@ export default function DashboardPage() {
       });
     }
   }, [assessmentsData]);
+
+  const handleAssessmentClick = (assessment: any) => {
+    const detailedAssessment: AssessmentDetail = {
+      ...assessment,
+      // Data already has names from API, no need to match
+      pillarScores: assessment.pillarScores.map((ps: any) => ({
+        pillarId: ps.pillarId,
+        score: ps.score,
+        name: ps.name || 'Unknown Pillar',
+      })),
+      dimensionScores: assessment.dimensionScores.map((ds: any) => ({
+        dimensionId: ds.dimensionId,
+        score: ds.score,
+        name: ds.name || 'Unknown Dimension',
+      })),
+    };
+    setSelectedAssessment(detailedAssessment);
+    setShowDetailModal(true);
+  };
 
   if (loading) {
     return (
@@ -329,7 +378,11 @@ export default function DashboardPage() {
             <CardContent>
               <div className="space-y-3">
                 {assessments.map((assessment, idx) => (
-                  <div key={assessment._id} className="flex items-center justify-between p-4 rounded-lg bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-600/50 transition-colors">
+                  <button
+                    key={assessment._id}
+                    onClick={() => handleAssessmentClick(assessment)}
+                    className="w-full text-left flex items-center justify-between p-4 rounded-lg bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-600/50 hover:shadow-md transition-all cursor-pointer"
+                  >
                     <div>
                       <p className="font-semibold text-slate-900 dark:text-white">{assessment.versionName}</p>
                       <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -342,12 +395,82 @@ export default function DashboardPage() {
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400">/5.0</p>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Assessment Details Modal */}
+        <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Assessment Score Breakdown</DialogTitle>
+            </DialogHeader>
+            {selectedAssessment && (
+              <div className="space-y-6 py-4">
+                {/* Overall Score */}
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 p-6 rounded-lg border border-green-200 dark:border-green-800">
+                  <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Overall Score</h3>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-bold text-green-600 dark:text-green-400">{selectedAssessment.overallScore.toFixed(2)}</span>
+                    <span className="text-lg text-slate-500 dark:text-slate-400">/5.0</span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                    Completed on {new Date(selectedAssessment.completedAt).toLocaleDateString()} at {new Date(selectedAssessment.completedAt).toLocaleTimeString()}
+                  </p>
+                </div>
+
+                {/* Pillar Scores */}
+                {selectedAssessment.pillarScores && selectedAssessment.pillarScores.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-slate-900 dark:text-white mb-3">Pillar Scores</h3>
+                    <div className="space-y-2">
+                      {selectedAssessment.pillarScores.map((pillar: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                          <span className="font-medium text-slate-900 dark:text-white">{pillar.name}</span>
+                          <div className="flex items-center gap-3">
+                            <div className="w-32 bg-slate-200 dark:bg-slate-600 rounded-full h-2">
+                              <div 
+                                className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full"
+                                style={{ width: `${(pillar.score / 5) * 100}%` }}
+                              />
+                            </div>
+                            <span className="font-bold text-blue-600 dark:text-blue-400 w-12 text-right">{pillar.score.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Dimension Scores */}
+                {selectedAssessment.dimensionScores && selectedAssessment.dimensionScores.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-slate-900 dark:text-white mb-3">Dimension Scores</h3>
+                    <div className="space-y-2">
+                      {selectedAssessment.dimensionScores.map((dimension: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                          <span className="font-medium text-slate-900 dark:text-white">{dimension.name}</span>
+                          <div className="flex items-center gap-3">
+                            <div className="w-32 bg-slate-200 dark:bg-slate-600 rounded-full h-2">
+                              <div 
+                                className="bg-gradient-to-r from-purple-500 to-purple-600 h-2 rounded-full"
+                                style={{ width: `${(dimension.score / 5) * 100}%` }}
+                              />
+                            </div>
+                            <span className="font-bold text-purple-600 dark:text-purple-400 w-12 text-right">{dimension.score.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

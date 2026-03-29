@@ -46,11 +46,14 @@ export default function SurveyPage() {
   const [formulas, setFormulas] = useState<any[]>([]);
 
   const [selectedVersionId, setSelectedVersionId] = useState('');
+  const [selectedFormulaId, setSelectedFormulaId] = useState('');
   const [responses, setResponses] = useState<Record<string, number>>({});
   const [surveySubmitted, setSurveySubmitted] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [error, setError] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [aiFeedback, setAiFeedback] = useState<any>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -108,6 +111,16 @@ export default function SurveyPage() {
   const filteredDimensions = selectedVersionId
     ? dimensions.filter((d) => d.indexVersionId === selectedVersionId)
     : [];
+
+  const filteredFormulas = selectedVersionId
+    ? formulas.filter((f) => f.indexVersionId === selectedVersionId)
+    : [];
+
+  const handleVersionChange = (versionId: string) => {
+    setSelectedVersionId(versionId);
+    setSelectedFormulaId('');
+    setResponses({});
+  };
 
   const handleResponseChange = (questionId: string, score: number) => {
     setResponses({
@@ -188,8 +201,13 @@ export default function SurveyPage() {
           : 0;
       });
 
-      // Get active formula
-      const activeFormula = formulas.find((f) => f.indexVersionId === selectedVersionId);
+      // Get selected formula or first available formula for this version
+      let activeFormula = null;
+      if (selectedFormulaId) {
+        activeFormula = formulas.find((f) => f._id.toString() === selectedFormulaId);
+      } else if (filteredFormulas.length > 0) {
+        activeFormula = filteredFormulas[0];
+      }
 
       let overallScore = 0;
       if (activeFormula) {
@@ -211,6 +229,7 @@ export default function SurveyPage() {
           indexVersionId: selectedVersionId,
           responses,
           overallScore,
+          questions: filteredQuestions,
           pillarScores: Object.entries(pillarFinalScores).map(([pillarId, score]) => ({
             pillarId,
             score,
@@ -226,7 +245,12 @@ export default function SurveyPage() {
         throw new Error('Failed to save assessment');
       }
 
+      const responseData = await res.json();
+      const assessment = responseData.assessment;
+      setAiFeedback(responseData.aiFeedback);
+
       setResults({
+        assessmentId: assessment._id,
         versionName: versions.find((v) => v._id === selectedVersionId)?.name,
         overallScore: overallScore.toFixed(2),
         pillarScores: Object.entries(pillarFinalScores).map(([pillarId, score]) => ({
@@ -249,10 +273,13 @@ export default function SurveyPage() {
 
   const resetSurvey = () => {
     setSelectedVersionId('');
+    setSelectedFormulaId('');
     setResponses({});
     setSurveySubmitted(false);
     setResults(null);
     setError('');
+    setAiFeedback(null);
+    setShowFeedback(false);
   };
 
   if (surveySubmitted && results) {
@@ -308,6 +335,67 @@ export default function SurveyPage() {
             </Button>
           </CardContent>
         </Card>
+
+        {aiFeedback && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 cursor-pointer" onClick={() => setShowFeedback(!showFeedback)}>
+                <span>🤖</span> AI Analysis & Feedback {showFeedback ? '▼' : '▶'}
+              </CardTitle>
+            </CardHeader>
+            {showFeedback && (
+              <CardContent className="space-y-4">
+                {aiFeedback.overallFeedback && (
+                  <div>
+                    <h4 className="font-semibold mb-2">Overview</h4>
+                    <p className="text-muted-foreground">{aiFeedback.overallFeedback}</p>
+                  </div>
+                )}
+                {aiFeedback.keyObservations && aiFeedback.keyObservations.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-2">Key Observations</h4>
+                    <ul className="list-disc list-inside space-y-1">
+                      {aiFeedback.keyObservations.map((obs: string, idx: number) => (
+                        <li key={idx} className="text-muted-foreground text-sm">{obs}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {aiFeedback.immediateActions && aiFeedback.immediateActions.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-2">Recommended Next Steps</h4>
+                    <ol className="list-decimal list-inside space-y-1">
+                      {aiFeedback.immediateActions.map((action: string, idx: number) => (
+                        <li key={idx} className="text-muted-foreground text-sm">{action}</li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Export & Download</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button 
+              onClick={() => {
+                const url = `/api/surveys/export-excel?assessmentId=${results.assessmentId}`;
+                window.open(url, '_blank');
+              }}
+              variant="outline"
+              className="w-full"
+            >
+              📊 Download CSV Report
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2">
+              Download a detailed CSV file with all calculations, methodology, and scoring breakdown
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -332,7 +420,7 @@ export default function SurveyPage() {
           <CardTitle>Select Assessment Version</CardTitle>
         </CardHeader>
         <CardContent>
-          <Select value={selectedVersionId} onValueChange={setSelectedVersionId}>
+          <Select value={selectedVersionId} onValueChange={handleVersionChange}>
             <SelectTrigger>
               <SelectValue placeholder="Select an assessment version" />
             </SelectTrigger>
@@ -346,6 +434,28 @@ export default function SurveyPage() {
           </Select>
         </CardContent>
       </Card>
+
+      {selectedVersionId && filteredFormulas.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Select Scoring Formula</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Select value={selectedFormulaId} onValueChange={setSelectedFormulaId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a formula or use default" />
+              </SelectTrigger>
+              <SelectContent>
+                {filteredFormulas.map((f) => (
+                  <SelectItem key={f._id.toString()} value={f._id.toString()}>
+                    {f.formulaName} {f.description ? `- ${f.description}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      )}
 
       {selectedVersionId && filteredQuestions.length > 0 && (
         <>

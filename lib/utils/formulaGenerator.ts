@@ -64,15 +64,24 @@ export function evaluateFormula(
     let expression = formula;
 
     // Replace pillar placeholders with actual scores
+    // Try full ID first, then last 4 chars as fallback
     Object.entries(pillarScores).forEach(([id, score]) => {
+      const scoreValue = Math.max(0, Math.min(5, score));
+      // Try full ID match first
+      expression = expression.replace(new RegExp(`P_${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'), scoreValue.toString());
+      // Try last 4 chars as fallback
       const lastFour = id.length > 4 ? id.slice(-4) : id;
-      expression = expression.replace(new RegExp(`P_${lastFour}`, 'g'), `${Math.max(0, Math.min(5, score))}`);
+      expression = expression.replace(new RegExp(`P_${lastFour.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'), scoreValue.toString());
     });
 
     // Replace dimension placeholders with actual scores
     Object.entries(dimensionScores).forEach(([id, score]) => {
+      const scoreValue = Math.max(0, Math.min(5, score));
+      // Try full ID match first
+      expression = expression.replace(new RegExp(`D_${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'), scoreValue.toString());
+      // Try last 4 chars as fallback
       const lastFour = id.length > 4 ? id.slice(-4) : id;
-      expression = expression.replace(new RegExp(`D_${lastFour}`, 'g'), `${Math.max(0, Math.min(5, score))}`);
+      expression = expression.replace(new RegExp(`D_${lastFour.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'), scoreValue.toString());
     });
 
     // Safely evaluate using Function constructor
@@ -92,15 +101,15 @@ export function evaluateFormula(
  */
 export function validateFormula(formula: string): { valid: boolean; error?: string } {
   try {
-    // Check for suspicious characters
-    if (!/^[\d\s+\-*/()P_D.]+$/.test(formula)) {
+    // Check for suspicious characters - allow alphanumeric IDs
+    if (!/^[\d\s+\-*/()P_D.a-fA-F]+$/.test(formula)) {
       return { valid: false, error: 'Formula contains invalid characters' };
     }
 
     // Try to evaluate with dummy values
     const dummyExpression = formula
-      .replace(/P_\w+/g, '2.5')
-      .replace(/D_\w+/g, '2.5');
+      .replace(/P_[a-fA-F0-9]+/g, '2.5')
+      .replace(/D_[a-fA-F0-9]+/g, '2.5');
 
     // eslint-disable-next-line no-new-func
     new Function(`return ${dummyExpression}`)();

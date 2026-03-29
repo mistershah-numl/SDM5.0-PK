@@ -7,15 +7,29 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertCircle, Edit2, Trash2 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 export default function MaturityLevelsPage() {
   const { data, mutate, isLoading } = useSWR('/api/admin/maturity-levels', fetcher, { revalidateOnFocus: true });
+  const { data: versionData } = useSWR('/api/admin/index-versions', fetcher);
+  
   const [levels, setLevels] = useState<any[]>([]);
+  const [versions, setVersions] = useState<any[]>([]);
+  const [indexVersionId, setIndexVersionId] = useState('');
   const [level, setLevel] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [minScore, setMinScore] = useState('');
+  const [maxScore, setMaxScore] = useState('');
+  const [color, setColor] = useState('#6b7280');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,6 +39,10 @@ export default function MaturityLevelsPage() {
     if (data?.levels) setLevels(data.levels);
   }, [data]);
 
+  useEffect(() => {
+    if (versionData?.versions) setVersions(versionData.versions);
+  }, [versionData]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -32,6 +50,12 @@ export default function MaturityLevelsPage() {
     setLoading(true);
 
     try {
+      if (!indexVersionId) {
+        setError('Please select an index version');
+        setLoading(false);
+        return;
+      }
+
       const method = editingId ? 'PUT' : 'POST';
       const url = editingId ? `/api/admin/maturity-levels?id=${editingId}` : '/api/admin/maturity-levels';
 
@@ -39,9 +63,13 @@ export default function MaturityLevelsPage() {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          indexVersionId,
           level: parseInt(level),
           name,
           description,
+          minScore: minScore ? parseInt(minScore) : 0,
+          maxScore: maxScore ? parseInt(maxScore) : 5,
+          color,
         }),
       });
 
@@ -53,6 +81,10 @@ export default function MaturityLevelsPage() {
       setLevel('');
       setName('');
       setDescription('');
+      setIndexVersionId('');
+      setMinScore('');
+      setMaxScore('');
+      setColor('#6b7280');
       setEditingId(null);
       setSuccessMessage(editingId ? 'Maturity level updated successfully' : 'Maturity level created successfully');
       setTimeout(() => mutate(), 500);
@@ -79,6 +111,10 @@ export default function MaturityLevelsPage() {
     setLevel(ml.level.toString());
     setName(ml.name);
     setDescription(ml.description);
+    setIndexVersionId(ml.indexVersionId);
+    setMinScore(ml.minScore?.toString() || '');
+    setMaxScore(ml.maxScore?.toString() || '');
+    setColor(ml.color || '#6b7280');
     setEditingId(ml._id);
     setSuccessMessage('');
   };
@@ -109,6 +145,21 @@ export default function MaturityLevelsPage() {
               </div>
             )}
             <div>
+              <label className="block text-sm font-medium mb-1">Index Version *</label>
+              <Select value={indexVersionId} onValueChange={setIndexVersionId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an index version" />
+                </SelectTrigger>
+                <SelectContent>
+                  {versions.map((v) => (
+                    <SelectItem key={v._id} value={v._id}>
+                      {v.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <label className="block text-sm font-medium mb-1">Level (0-5) *</label>
               <Input
                 type="number"
@@ -137,6 +188,42 @@ export default function MaturityLevelsPage() {
                 placeholder="Description of this maturity level"
               />
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Min Score</label>
+                <Input
+                  type="number"
+                  value={minScore}
+                  onChange={(e) => setMinScore(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Max Score</label>
+                <Input
+                  type="number"
+                  value={maxScore}
+                  onChange={(e) => setMaxScore(e.target.value)}
+                  placeholder="5"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Color</label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                />
+                <Input
+                  type="text"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="#6b7280"
+                />
+              </div>
+            </div>
             <div className="flex gap-2">
               <Button type="submit" disabled={loading}>
                 {loading ? 'Saving...' : editingId ? 'Update' : 'Create'}
@@ -150,6 +237,10 @@ export default function MaturityLevelsPage() {
                     setLevel('');
                     setName('');
                     setDescription('');
+                    setIndexVersionId('');
+                    setMinScore('');
+                    setMaxScore('');
+                    setColor('#6b7280');
                     setError('');
                     setSuccessMessage('');
                   }}
@@ -178,6 +269,7 @@ export default function MaturityLevelsPage() {
                   <TableHead>Level</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead>Score Range</TableHead>
                   <TableHead className="w-24">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -187,6 +279,7 @@ export default function MaturityLevelsPage() {
                     <TableCell className="font-bold">{ml.level}</TableCell>
                     <TableCell className="font-medium">{ml.name}</TableCell>
                     <TableCell>{ml.description}</TableCell>
+                    <TableCell>{ml.minScore || 0} - {ml.maxScore || 5}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(ml)} className="text-primary hover:underline">

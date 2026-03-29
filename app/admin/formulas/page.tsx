@@ -216,6 +216,22 @@ export default function FormulasPage() {
     setSuccessMessage('');
   };
 
+  const convertFormulaToReadable = (formula: string, allPillars: any[]): string => {
+    let readable = formula;
+    // Create a map of ObjectId -> pillar name
+    const pillarMap: Record<string, string> = {};
+    allPillars.forEach((p) => {
+      pillarMap[p._id] = p.name;
+    });
+    
+    // Replace all P_[ObjectId] patterns with P_[PillarName]
+    readable = readable.replace(/P_([a-f0-9]{24})/g, (match, objectId) => {
+      return `P_${pillarMap[objectId] || objectId}`;
+    });
+    
+    return readable;
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -444,7 +460,7 @@ export default function FormulasPage() {
                   <TableRow key={f._id}>
                     <TableCell className="font-medium">{f.formulaName}</TableCell>
                     <TableCell>{versions.find((v) => v._id === f.indexVersionId)?.name || 'Unknown'}</TableCell>
-                    <TableCell className="max-w-xs truncate font-mono text-xs">{f.formulaExpression}</TableCell>
+                    <TableCell className="max-w-xs truncate font-mono text-xs">{convertFormulaToReadable(f.formulaExpression, pillars)}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(f)} className="text-primary hover:underline">

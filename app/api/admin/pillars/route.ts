@@ -46,9 +46,17 @@ export async function PUT(req: NextRequest) {
     }
 
     await connectDB();
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "ID is required" }, { status: 400 });
+    }
+
     const body = await req.json();
-    const { _id, ...update } = body;
-    const pillar = await Pillar.findByIdAndUpdate(_id, update, { new: true }).lean();
+    const pillar = await Pillar.findByIdAndUpdate(id, body, { new: true }).lean();
+    if (!pillar) {
+      return NextResponse.json({ error: "Pillar not found" }, { status: 404 });
+    }
     return NextResponse.json({ pillar });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed to update pillar";
